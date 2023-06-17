@@ -1,0 +1,160 @@
+import hashlib
+import json
+import logging
+import time
+
+import requests
+logger = logging.getLogger(__name__)
+logger.setLevel(level = logging.INFO)
+handler = logging.FileHandler('log/apiLog')
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+
+def hash(paramMapString):
+    s = hashlib.sha256()  # Get the hash algorithm.
+    s.update(paramMapString.encode("UTF-8"))
+    b = s.hexdigest()  # Get he hash value.
+    return b.upper()
+
+def mapToString(secretKey, paramMap):
+    keys = paramMap.keys()
+    keys = list(keys)
+    keys.sort()
+    # print(keys)
+    str = ""
+    isFirst = True
+    for k in keys:
+        if isFirst:
+            isFirst = False
+        else:
+            str += "&"
+        str += k + "=" + paramMap[k]
+    str += "&secretKey=" + secretKey
+    print("加密参数："+str)
+    return str
+
+def cloud_api_header(data,secretId,secretKey):
+    label_service_header = {
+        "Content-Type": "application/json;charset=utf8",
+        "secretId":secretId,
+        "sign": hash(mapToString(secretKey, data))
+    }
+    print("请求头：",label_service_header)
+    return label_service_header
+
+class muti_thread_test():
+    def __init__(self):
+
+    def test_build_report(self, mainChain):
+        if mainChain == "BTC":
+            addressFile = "testData/reportAddress-btc"
+        elif mainChain == "ETH":
+            addressFile = "testData/reportAddress-eth"
+        else:
+            addressFile = "testData/reportAddress-bsc"
+        url = self.base_url + "/check-report/generate"
+        addresses = open(addressFile,'r').readlines()
+        reportIdFile = open('testData/reportId','w')
+        for address in addresses:
+            if address[0] != '#':
+                address = address.strip()
+                data = {'address': address,'mainChain':mainChain}
+                label_service_header = cloud_api_header(data, self.secretId, self.secretKey)
+                result = requests.get(url, params=data, headers=label_service_header)
+                if result.status_code == 200:
+                    resultJ = result.json()
+                    if resultJ['code'] == 200:
+                        reportId = resultJ['data']
+                        reportIdFile.write(reportId+'\t'+address+'\n')
+                        print('生成结果：[%s] build report success' % address)
+                        logger.info('生成结果：[%s] build report success' % address)
+                    else:
+                        print('生成结果：[%s] build report fail: %s' % (address, result.text))
+                        logger.error('生成结果：[%s] build report fail: %s' % (address, result.text))
+                else:
+                    print('生成结果：[%s] build report fail: %s' % (address, result.text))
+                    logger.error('生成结果：[%s] build report fail: %s' % (address, result.text))
+
+    def test_report_list(self):
+        url = self.base_url + "/check-report/list"
+        data = {'address':'','pageNo': '1'}
+        label_service_header = cloud_api_header(data, self.secretId, self.secretKey)
+        result = requests.get(url, params=data, headers=label_service_header)
+        if result.status_code == 200:
+            print('查询结果：',result.text)
+            logger.info('查询结果：get report list success')
+        else:
+            print('查询结果：get report list fail')
+            logger.info('查询结果：get report list fail：%s' % (result.text))
+
+    def test_download_report(self,mainChain):
+        if mainChain == "BTC":
+            reportDir = "report/btc/"
+        elif mainChain == "ETH":
+            reportDir = "report/eth/"
+        else:
+            reportDir = "report/bsc/"
+        url = self.base_url + "/check-report/download"
+        lines = open('testData/reportId', 'r').readlines()
+        for line in lines:
+            if line[0] != '#':
+                line = line.strip().split('\t')
+                reportId = line[0]
+                address = line[1]
+                data = {'checkReportId':reportId}
+                label_service_header = cloud_api_header(data, self.secretId, self.secretKey)
+                result = requests.get(url, params=data, headers=label_service_header)
+                if result.status_code == 200:
+                    file = open(reportDir + address + ".pdf","wb")
+                    file.write(result.content)
+                    print('下载结果：[%s] download report success' % address)
+                    logger.info('下载结果：[%s] download report success' % address)
+                else:
+                    print('下载结果：[%s] download report fail' % address)
+                    logger.info('下载结果：[%s] download report fail：%s' % (address, result.text))
+
+    def test_preCheck(self, mainChain):
+        if mainChain == "BTC":
+            addressFile = "testData/reportAddress-btc"
+        elif mainChain == "ETH":
+            addressFile = "testData/reportAddress-eth"
+        else:
+            addressFile = "testData/reportAddress-bsc"
+        url = self.base_url + "/check-report/preCheck"
+        addresses = open(addressFile, 'r').readlines()
+        for address in addresses:
+            if address[0] != '#':
+                address = address.strip()
+                data = {'address': address, 'mainChain': mainChain}
+                label_service_header = cloud_api_header(data, self.secretId, self.secretKey)
+                result = requests.get(url, params=data, headers=label_service_header)
+                if result.status_code == 200:
+                    resultJ = result.json()
+                    if resultJ['code'] == 200:
+                        reportId = resultJ['data']
+                        print(result.text)
+                        print('预检查结果：[%s] preCheck success' % address)
+                        logger.info('预检查结果：[%s] preCheck success' % address)
+                    else:
+                        print('预检查结果：[%s] preCheck fail: %s' % (address, result.text))
+                        logger.error('预检查结果：[%s] preCheck fail: %s' % (address, result.text))
+                else:
+                    print('预检查结果：[%s] preCheck fail: %s' % (address, result.text))
+                    logger.error('预检查结果：[%s] preCheck fail: %s' % (address, result.text))
+
+if __name__ == '__main__':
+    mainChain = btc
+    #mainChain = eth
+    #mainChain = bsc
+    tt=muti_thread_test()
+    # 生成报告
+    #tt.test_build_report(mainChain)
+    #查询报告列表
+    #tt.test_report_list()
+    #下载报告
+    tt.test_download_report(mainChain)
+    #地址预检查
+    #tt.test_preCheck(mainChain)
+
